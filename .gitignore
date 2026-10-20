@@ -1,0 +1,42 @@
+# --- Secrets & credentials (never commit these) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+.kube/
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfvars
+*.tfvars.json
+!*.example.tfvars
+# NOTE: .terraform.lock.hcl is NOT ignored on purpose - commit it.
+
+# --- Helm ---
+k8s/helm/**/charts/*.tgz
+
+# --- Editors & OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
