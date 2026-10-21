@@ -31,15 +31,15 @@ _A proper diagram will replace this sketch._
 
 ## Tech stack
 
-| Area | Tools |
-|---|---|
-| Application | Python, FastAPI, PostgreSQL |
-| Containers | Docker, Docker Compose |
-| Orchestration | Kubernetes (kind locally, Amazon EKS on AWS), Helm |
-| GitOps | ArgoCD |
-| CI/CD | GitHub Actions, Trivy |
-| Infrastructure as Code | Terraform (VPC, EKS, ECR, IAM) |
-| Observability | Prometheus, Grafana |
+| Area                   | Tools                                              |
+| ---------------------- | -------------------------------------------------- |
+| Application            | Python, FastAPI, PostgreSQL                        |
+| Containers             | Docker, Docker Compose                             |
+| Orchestration          | Kubernetes (kind locally, Amazon EKS on AWS), Helm |
+| GitOps                 | ArgoCD                                             |
+| CI/CD                  | GitHub Actions, Trivy                              |
+| Infrastructure as Code | Terraform (VPC, EKS, ECR, IAM)                     |
+| Observability          | Prometheus, Grafana                                |
 
 ## Roadmap
 
