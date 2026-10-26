@@ -1,64 +1,108 @@
-# EKS GitOps Platform
+# EKS GitOps Platform: Uptime Monitor
 
 > **Status: work in progress.** Built step by step; the roadmap below shows what is done.
 
-A production-style platform on AWS: a small Python API, containerised with Docker, deployed to
-Amazon EKS. Infrastructure is managed with Terraform, delivery runs through GitHub Actions and
-ArgoCD (GitOps), and the cluster is monitored with Prometheus and Grafana.
+A small **uptime monitoring service**, built as a multi-service app and run on a
+production-style platform on AWS. Infrastructure is managed with Terraform, delivery runs through
+GitHub Actions and ArgoCD (GitOps), and the platform is monitored with Prometheus, Grafana and
+Alertmanager.
+
+## What it does
+
+- Register the URLs you want to watch (for example `https://github.com` or your own service)
+- A **checker** service checks every target on a schedule and records whether it is up and how fast it responded
+- The **API** shows targets, check history and current status
+- **Alerts** fire when a target goes down
+
+```
+POST /targets   {"url": "https://github.com"}
+→ 201 Created   {"id": 1, "url": "https://github.com"}
+
+GET  /status
+→ 200 OK        [{"id": 1, "url": "https://github.com", "up": true, "response_ms": 84}]
+```
+
+## Planned architecture
+
+```
+Request path
+  User ──▶ AWS Load Balancer ──▶ api (EKS, autoscaled) ──┐
+                                                         ├──▶ PostgreSQL (Amazon RDS)
+                                 checker (EKS worker) ───┘
+                                     └──▶ checks external URLs
+
+Monitoring
+  Prometheus ◀── metrics from api + checker
+      ├──▶ Alertmanager ("target down" alerts)
+      └──▶ Grafana dashboards
+
+Delivery
+  git push ──▶ GitHub Actions: test → build → scan → push images (ECR)
+  ArgoCD (in the cluster) watches this repo and deploys the Helm chart
+```
+
+_A proper diagram will replace this sketch._
+
+## Why Kubernetes?
+
+For this workload alone, **Amazon ECS Fargate or App Runner would be simpler and cheaper**, and I
+have run ECS Fargate in production. I chose EKS deliberately, to learn and demonstrate Kubernetes
+operations on a realistic multi-service workload: separate scaling for the API and the checker,
+health probes, persistent storage, network policies, GitOps delivery and failure recovery.
 
 ## Goals
 
 - Infrastructure fully defined as code, reproducible with one `terraform apply` and removable with one `terraform destroy`
 - No long-lived AWS credentials in CI (GitHub Actions → AWS via OIDC)
 - Git as the single source of truth for what runs in the cluster (ArgoCD)
-- Secure by default: non-root containers, image vulnerability scanning, least-privilege IAM
-- Observable: metrics, dashboards and at least one meaningful alert
+- Secure by default: non-root containers, image vulnerability scanning, least-privilege IAM, network policies
+- Observable: metrics, dashboards and alerts that mean something
+- Resilient: failure scenarios tested on purpose and documented
 - Cost-aware: documented costs and a clean teardown
-
-## Planned architecture
-
-```
-Developer ──push──▶ GitHub ──▶ GitHub Actions: test → build → scan → push image (ECR)
-                       │
-                       └──▶ ArgoCD (in EKS) watches the repo ──▶ deploys Helm chart to EKS
-                                                                     │
-                                         AWS Load Balancer ◀─────────┘
-                                                                     │
-                                         Prometheus / Grafana ◀──────┘
-```
-
-_A proper diagram will replace this sketch._
 
 ## Tech stack
 
-| Area                   | Tools                                              |
-| ---------------------- | -------------------------------------------------- |
-| Application            | Python, FastAPI, PostgreSQL                        |
-| Containers             | Docker, Docker Compose                             |
-| Orchestration          | Kubernetes (kind locally, Amazon EKS on AWS), Helm |
-| GitOps                 | ArgoCD                                             |
-| CI/CD                  | GitHub Actions, Trivy                              |
-| Infrastructure as Code | Terraform (VPC, EKS, ECR, IAM)                     |
-| Observability          | Prometheus, Grafana                                |
+| Area                   | Tools                                                  |
+| ---------------------- | ------------------------------------------------------ |
+| Application            | Python, FastAPI, httpx, PostgreSQL                     |
+| Containers             | Docker, Docker Compose                                 |
+| Orchestration          | Kubernetes (kind locally, Amazon EKS on AWS), Helm     |
+| GitOps                 | ArgoCD                                                 |
+| CI/CD                  | GitHub Actions, Trivy                                  |
+| Infrastructure as Code | Terraform (VPC, EKS, ECR, RDS, IAM)                    |
+| Observability          | Prometheus, Grafana, Alertmanager                      |
 
 ## Roadmap
 
-- [ ] **1. App:** FastAPI service with health check, tests
-- [ ] **2. Docker:** small, non-root image; Docker Compose with PostgreSQL
-- [ ] **3. Local Kubernetes:** plain manifests on kind, then a Helm chart
-- [ ] **4. GitOps & monitoring (local):** ArgoCD, Prometheus, Grafana
-- [ ] **5. CI:** GitHub Actions pipeline with tests, image build and vulnerability scan
-- [ ] **6. AWS foundation:** Terraform remote state, VPC, ECR
-- [ ] **7. EKS:** cluster via Terraform, GitHub OIDC, ArgoCD and Load Balancer Controller on EKS
-- [ ] **8. Docs:** architecture diagram, cost table, design decisions
+- [ ] **1. API:** FastAPI service with health check, target endpoints (in memory), tests
+- [ ] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL
+- [ ] **3. Checker:** worker that checks targets on a schedule and records results
+- [ ] **4. Local Kubernetes:** manifests on kind (Deployments, StatefulSet, Services, NetworkPolicies), then a Helm chart
+- [ ] **5. GitOps & monitoring (local):** ArgoCD, Prometheus, Grafana, Alertmanager "target down" alert
+- [ ] **6. CI:** GitHub Actions pipeline with tests, image builds and vulnerability scans
+- [ ] **7. AWS foundation:** Terraform remote state, VPC, ECR, RDS
+- [ ] **8. EKS:** cluster via Terraform, GitHub OIDC, ArgoCD and Load Balancer Controller on EKS
+- [ ] **9. Failure drills & docs:** tested failure scenarios, architecture diagram, cost table, design decisions
+
+## Failure drills (planned)
+
+| Scenario                    | Expected behaviour                                                  | Result |
+| --------------------------- | ------------------------------------------------------------------- | ------ |
+| Delete an API pod           | Kubernetes replaces it; no downtime with 2+ replicas                | _TBD_  |
+| Drain a node                | Pods are rescheduled on another node                                | _TBD_  |
+| Database unavailable        | Readiness probe fails, traffic stops, alert fires                   | _TBD_  |
+| Deploy a broken image       | Probes stop the rollout; roll back through Git and ArgoCD           | _TBD_  |
+| A monitored site goes down  | Checker records it, "target down" alert fires                       | _TBD_  |
 
 ## Repository structure
 
 ```
-app/                 FastAPI application, tests, Dockerfile
+services/
+  api/               FastAPI service: targets, results, status
+  checker/           Worker that runs the checks (milestone 3)
 k8s/                 Kubernetes manifests and Helm chart
 argocd/              ArgoCD application definitions
-monitoring/          Prometheus / Grafana configuration
+monitoring/          Prometheus / Grafana / Alertmanager configuration
 terraform/           AWS infrastructure (bootstrap + environments)
 .github/workflows/   CI pipelines
 docs/                Diagrams and design decisions
@@ -70,9 +114,9 @@ _Coming with milestone 1._
 
 ## Deploy to AWS
 
-_Coming with milestone 7._
+_Coming with milestone 8._
 
-> ⚠️ **Cost warning:** EKS and NAT gateways are billed per hour while they exist.
+> ⚠️ **Cost warning:** EKS, NAT gateways and RDS are billed per hour while they exist.
 > Always run `terraform destroy` when you are done.
 
 ## Design decisions
