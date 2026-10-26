@@ -74,7 +74,7 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 
 ## Roadmap
 
-- [ ] **1. API:** FastAPI service with health check, target endpoints (in memory), tests
+- [x] **1. API:** FastAPI service with health check, target endpoints (in memory), tests
 - [ ] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL
 - [ ] **3. Checker:** worker that checks targets on a schedule and records results
 - [ ] **4. Local Kubernetes:** manifests on kind (Deployments, StatefulSet, Services, NetworkPolicies), then a Helm chart
@@ -110,7 +110,30 @@ docs/                Diagrams and design decisions
 
 ## Run locally
 
-_Coming with milestone 1._
+Requirements: Python 3.14
+
+```bash
+cd services/api
+py -3.14 -m venv .venv
+source .venv/Scripts/activate        # Linux/macOS: source .venv/bin/activate
+pip install -r requirements-dev.txt
+uvicorn src.main:app --reload
+```
+
+Interactive API docs: http://localhost:8000/docs
+
+Try it with curl:
+
+```bash
+curl -X POST http://localhost:8000/targets -H "Content-Type: application/json" -d '{"url": "https://github.com"}'
+curl http://localhost:8000/targets
+```
+
+Run the tests:
+
+```bash
+python -m pytest -v
+```
 
 ## Deploy to AWS
 
