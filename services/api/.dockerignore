@@ -1,0 +1,12 @@
+# Local Python environment and caches: rebuilt inside the image, never copied
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Only needed for development and testing, not at runtime
+tests/
+requirements-dev.txt
+
+# Secrets must never end up in an image
+.env
