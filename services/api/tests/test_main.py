@@ -1,15 +1,23 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from src.main import app, targets
+from src.main import app
 
 client = TestClient(app)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def database():
+    """Run the app's startup once for all tests: opens the pool and creates the table."""
+    with client:
+        yield
+
+
 @pytest.fixture(autouse=True)
-def empty_storage():
-    """Start every test with no targets, so tests can't affect each other."""
-    targets.clear()
+def empty_storage(database):
+    """Start every test with an empty table, so tests can't affect each other."""
+    with app.state.pool.connection() as conn:
+        conn.execute("TRUNCATE targets RESTART IDENTITY")
 
 
 def test_health_returns_ok():
@@ -17,6 +25,13 @@ def test_health_returns_ok():
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_ready_when_database_is_reachable():
+    response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
 
 
 def test_create_target_returns_201_and_the_target():
