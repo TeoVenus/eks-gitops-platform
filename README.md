@@ -75,7 +75,7 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 ## Roadmap
 
 - [x] **1. API:** FastAPI service with health check, target endpoints (in memory), tests
-- [ ] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL
+- [x] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL, readiness check
 - [ ] **3. Checker:** worker that checks targets on a schedule and records results
 - [ ] **4. Local Kubernetes:** manifests on kind (Deployments, StatefulSet, Services, NetworkPolicies), then a Helm chart
 - [ ] **5. GitOps & monitoring (local):** ArgoCD, Prometheus, Grafana, Alertmanager "target down" alert
@@ -97,8 +97,10 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 ## Repository structure
 
 ```
+docker-compose.yml   Local development: API + PostgreSQL
+.env.example         Settings template for Docker Compose (copy to .env)
 services/
-  api/               FastAPI service: targets, results, status
+  api/               FastAPI service: targets, results, status (with its Dockerfile)
   checker/           Worker that runs the checks (milestone 3)
 k8s/                 Kubernetes manifests and Helm chart
 argocd/              ArgoCD application definitions
@@ -110,26 +112,68 @@ docs/                Diagrams and design decisions
 
 ## Run locally
 
-Requirements: Python 3.14
+### With Docker Compose
+
+Requirements: Docker Desktop (or Docker Engine with the Compose plugin)
+
+From the repository root:
 
 ```bash
+cp .env.example .env                 # then set your own password (letters and digits only)
+docker compose up --build
+```
+
+This starts two containers:
+
+- `db`: PostgreSQL 18, with its data in the named volume `pgdata`, so it survives restarts
+- `api`: the API, built from `services/api/Dockerfile`; it starts once the database is healthy
+  and creates its table on startup
+
+Targets are stored in PostgreSQL, so they survive restarts of both containers.
+
+Useful commands:
+
+```bash
+docker compose ps                                       # status of both containers
+docker compose logs -f api                              # follow the API logs
+docker compose exec db psql -U uptime -d uptime         # open a SQL shell in the database
+docker compose down                                     # stop and remove the containers, keep the data
+docker compose down -v                                  # also delete the volume: all data is lost
+```
+
+### API from source (for development)
+
+Requirements: Python 3.14, and the database from Docker Compose. Stop the `api` container
+first (`docker compose stop api`), so port 8000 is free.
+
+```bash
+docker compose up -d db                 # from the repository root
 cd services/api
 py -3.14 -m venv .venv
-source .venv/Scripts/activate        # Linux/macOS: source .venv/bin/activate
+source .venv/Scripts/activate           # Linux/macOS: source .venv/bin/activate
 pip install -r requirements-dev.txt
+
+# Build the connection string from .env (use 127.0.0.1, not localhost)
+set -a; source ../../.env; set +a
+export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:5432/$POSTGRES_DB"
+
 uvicorn src.main:app --reload
 ```
 
-Interactive API docs: http://localhost:8000/docs
+### Try it
 
-Try it with curl:
+Both ways serve the API on port 8000. Interactive API docs: http://localhost:8000/docs
 
 ```bash
 curl -X POST http://localhost:8000/targets -H "Content-Type: application/json" -d '{"url": "https://github.com"}'
 curl http://localhost:8000/targets
+curl http://localhost:8000/ready        # 200 when the database is reachable, 503 when it is not
 ```
 
-Run the tests:
+### Run the tests
+
+The tests need the database from Docker Compose and **empty the `targets` table**. From
+`services/api`, with the virtual environment active and `DATABASE_URL` set as above:
 
 ```bash
 python -m pytest -v
