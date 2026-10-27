@@ -75,7 +75,7 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 ## Roadmap
 
 - [x] **1. API:** FastAPI service with health check, target endpoints (in memory), tests
-- [ ] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL
+- [ ] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL _(in progress: image and Compose setup done)_
 - [ ] **3. Checker:** worker that checks targets on a schedule and records results
 - [ ] **4. Local Kubernetes:** manifests on kind (Deployments, StatefulSet, Services, NetworkPolicies), then a Helm chart
 - [ ] **5. GitOps & monitoring (local):** ArgoCD, Prometheus, Grafana, Alertmanager "target down" alert
@@ -97,8 +97,10 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 ## Repository structure
 
 ```
+docker-compose.yml   Local development: API + PostgreSQL
+.env.example         Settings template for Docker Compose (copy to .env)
 services/
-  api/               FastAPI service: targets, results, status
+  api/               FastAPI service: targets, results, status (with its Dockerfile)
   checker/           Worker that runs the checks (milestone 3)
 k8s/                 Kubernetes manifests and Helm chart
 argocd/              ArgoCD application definitions
@@ -110,6 +112,36 @@ docs/                Diagrams and design decisions
 
 ## Run locally
 
+### With Docker Compose
+
+Requirements: Docker Desktop (or Docker Engine with the Compose plugin)
+
+From the repository root:
+
+```bash
+cp .env.example .env                 # then set your own password (letters and digits only)
+docker compose up --build
+```
+
+This starts two containers:
+
+- `db`: PostgreSQL 18, with its data in the named volume `pgdata`, so it survives restarts
+- `api`: the API, built from `services/api/Dockerfile`; it starts once the database is healthy
+
+> The API still keeps targets in memory; storing them in PostgreSQL is the next step of milestone 2.
+
+Useful commands:
+
+```bash
+docker compose ps                                       # status of both containers
+docker compose logs -f api                              # follow the API logs
+docker compose exec db psql -U uptime -d uptime         # open a SQL shell in the database
+docker compose down                                     # stop and remove the containers, keep the data
+docker compose down -v                                  # also delete the volume: all data is lost
+```
+
+### Without Docker
+
 Requirements: Python 3.14
 
 ```bash
@@ -120,16 +152,18 @@ pip install -r requirements-dev.txt
 uvicorn src.main:app --reload
 ```
 
-Interactive API docs: http://localhost:8000/docs
+### Try it
 
-Try it with curl:
+Both ways serve the API on port 8000. Interactive API docs: http://localhost:8000/docs
 
 ```bash
 curl -X POST http://localhost:8000/targets -H "Content-Type: application/json" -d '{"url": "https://github.com"}'
 curl http://localhost:8000/targets
 ```
 
-Run the tests:
+### Run the tests
+
+From `services/api`, with the virtual environment active:
 
 ```bash
 python -m pytest -v
