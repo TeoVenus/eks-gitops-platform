@@ -1,4 +1,4 @@
-# Local development: the API and PostgreSQL together.
+# Local development: the API, the checker and PostgreSQL together.
 # Start: docker compose up --build    Stop: docker compose down
 name: uptime-monitor
 
@@ -26,6 +26,16 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     ports:
       - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  checker:
+    build: ./services/checker
+    image: uptime-checker:dev
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CHECK_INTERVAL_SECONDS: "30"
     depends_on:
       db:
         condition: service_healthy

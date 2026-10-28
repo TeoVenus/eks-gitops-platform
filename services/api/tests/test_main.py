@@ -17,7 +17,7 @@ def database():
 def empty_storage(database):
     """Start every test with an empty table, so tests can't affect each other."""
     with app.state.pool.connection() as conn:
-        conn.execute("TRUNCATE targets RESTART IDENTITY")
+        conn.execute("TRUNCATE targets RESTART IDENTITY CASCADE")
 
 
 def test_health_returns_ok():
