@@ -12,14 +12,26 @@ Alertmanager.
 - Register the URLs you want to watch (for example `https://github.com` or your own service)
 - A **checker** service checks every target on a schedule and records whether it is up and how fast it responded
 - The **API** shows targets, check history and current status
-- **Alerts** fire when a target goes down
+- **Alerts** fire when a target goes down _(planned, milestone 5)_
+
+| Endpoint                          | Purpose                                                    |
+| --------------------------------- | ---------------------------------------------------------- |
+| `POST /targets`                   | Register a URL to monitor                                  |
+| `GET /targets`, `GET /targets/{id}` | List targets, get one target                             |
+| `DELETE /targets/{id}`            | Stop monitoring a target (its results are deleted too)     |
+| `GET /status`                     | Every target with its latest check                         |
+| `GET /targets/{id}/results`       | Check history of one target, newest first (`?limit=1..100`, default 20) |
+| `GET /health`, `GET /ready`       | Liveness and readiness checks                              |
 
 ```
 POST /targets   {"url": "https://github.com"}
-→ 201 Created   {"id": 1, "url": "https://github.com"}
+→ 201 Created   {"id": 1, "url": "https://github.com/", "created_at": "2026-10-28T16:08:04Z"}
 
 GET  /status
-→ 200 OK        [{"id": 1, "url": "https://github.com", "up": true, "response_ms": 84}]
+→ 200 OK        [{"id": 1, "url": "https://github.com/", "up": true, "status_code": 200,
+                  "response_ms": 206, "error": null, "checked_at": "2026-10-28T16:08:06Z"},
+                 {"id": 2, "url": "https://does-not-exist.invalid/", "up": false, "status_code": null,
+                  "response_ms": null, "error": "ConnectError", "checked_at": "2026-10-28T16:08:06Z"}]
 ```
 
 ## Planned architecture
@@ -76,7 +88,7 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 
 - [x] **1. API:** FastAPI service with health check, target endpoints (in memory), tests
 - [x] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL, readiness check
-- [ ] **3. Checker:** worker that checks targets on a schedule and records results; API shows status and history _(in progress: checker records results)_
+- [x] **3. Checker:** worker that checks targets on a schedule and records results; API shows status and history
 - [ ] **4. Local Kubernetes:** manifests on kind (Deployments, StatefulSet, Services, NetworkPolicies), then a Helm chart
 - [ ] **5. GitOps & monitoring (local):** ArgoCD, Prometheus, Grafana, Alertmanager "target down" alert
 - [ ] **6. CI:** GitHub Actions pipeline with tests, image builds and vulnerability scans
@@ -172,6 +184,8 @@ Both ways serve the API on port 8000. Interactive API docs: http://localhost:800
 curl -X POST http://localhost:8000/targets -H "Content-Type: application/json" -d '{"url": "https://github.com"}'
 curl http://localhost:8000/targets
 curl http://localhost:8000/ready        # 200 when the database is reachable, 503 when it is not
+curl http://localhost:8000/status       # latest check per target (the checker runs every 30 seconds)
+curl "http://localhost:8000/targets/1/results?limit=5"
 ```
 
 ### Run the tests

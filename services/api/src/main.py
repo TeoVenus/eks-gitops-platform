@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 import psycopg
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Query, status
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, HttpUrl
 
@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     app.state.pool.close()
 
 
-app = FastAPI(title="uptime-monitor-api", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="uptime-monitor-api", version="0.3.0", lifespan=lifespan)
 
 
 class TargetIn(BaseModel):
@@ -33,6 +33,28 @@ class Target(BaseModel):
     id: int
     url: HttpUrl
     created_at: datetime
+
+
+class CheckResult(BaseModel):
+    """One check of a target, as recorded by the checker."""
+
+    checked_at: datetime
+    up: bool
+    status_code: int | None
+    response_ms: int | None
+    error: str | None
+
+
+class TargetStatus(BaseModel):
+    """A target with its latest check. The check fields are empty until the first check."""
+
+    id: int
+    url: HttpUrl
+    up: bool | None
+    status_code: int | None
+    response_ms: int | None
+    error: str | None
+    checked_at: datetime | None
 
 
 @app.get("/health")
@@ -50,6 +72,27 @@ def ready() -> dict[str, str]:
     except psycopg.Error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
     return {"status": "ready"}
+
+
+@app.get("/status")
+def get_status() -> list[TargetStatus]:
+    """Every target with the result of its latest check."""
+    with app.state.pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT t.id, t.url, r.up, r.status_code, r.response_ms, r.error, r.checked_at
+            FROM targets t
+            LEFT JOIN LATERAL (
+                SELECT up, status_code, response_ms, error, checked_at
+                FROM check_results
+                WHERE target_id = t.id
+                ORDER BY checked_at DESC
+                LIMIT 1
+            ) r ON true
+            ORDER BY t.id
+            """
+        ).fetchall()
+    return [TargetStatus(**row) for row in rows]
 
 
 @app.get("/targets")
@@ -82,6 +125,20 @@ def get_target(target_id: int) -> Target:
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
     return Target(**row)
+
+
+@app.get("/targets/{target_id}/results")
+def get_results(target_id: int, limit: int = Query(default=20, ge=1, le=100)) -> list[CheckResult]:
+    """The latest check results of one target, newest first."""
+    with app.state.pool.connection() as conn:
+        if conn.execute("SELECT 1 FROM targets WHERE id = %s", (target_id,)).fetchone() is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+        rows = conn.execute(
+            "SELECT checked_at, up, status_code, response_ms, error FROM check_results"
+            " WHERE target_id = %s ORDER BY checked_at DESC LIMIT %s",
+            (target_id, limit),
+        ).fetchall()
+    return [CheckResult(**row) for row in rows]
 
 
 @app.delete("/targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
