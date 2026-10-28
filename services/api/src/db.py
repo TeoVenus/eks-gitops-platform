@@ -7,7 +7,20 @@ CREATE TABLE IF NOT EXISTS targets (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     url        TEXT        NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-)
+);
+
+CREATE TABLE IF NOT EXISTS check_results (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    target_id   BIGINT      NOT NULL REFERENCES targets (id) ON DELETE CASCADE,
+    checked_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    up          BOOLEAN     NOT NULL,
+    status_code INTEGER,
+    response_ms INTEGER,
+    error       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS check_results_target_id_checked_at
+    ON check_results (target_id, checked_at DESC);
 """
 
 

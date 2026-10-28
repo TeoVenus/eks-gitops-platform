@@ -76,7 +76,7 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 
 - [x] **1. API:** FastAPI service with health check, target endpoints (in memory), tests
 - [x] **2. Docker & database:** small, non-root image; Docker Compose with PostgreSQL; API stores data in PostgreSQL, readiness check
-- [ ] **3. Checker:** worker that checks targets on a schedule and records results
+- [ ] **3. Checker:** worker that checks targets on a schedule and records results; API shows status and history _(in progress: checker records results)_
 - [ ] **4. Local Kubernetes:** manifests on kind (Deployments, StatefulSet, Services, NetworkPolicies), then a Helm chart
 - [ ] **5. GitOps & monitoring (local):** ArgoCD, Prometheus, Grafana, Alertmanager "target down" alert
 - [ ] **6. CI:** GitHub Actions pipeline with tests, image builds and vulnerability scans
@@ -97,11 +97,11 @@ health probes, persistent storage, network policies, GitOps delivery and failure
 ## Repository structure
 
 ```
-docker-compose.yml   Local development: API + PostgreSQL
+docker-compose.yml   Local development: API + checker + PostgreSQL
 .env.example         Settings template for Docker Compose (copy to .env)
 services/
-  api/               FastAPI service: targets, results, status (with its Dockerfile)
-  checker/           Worker that runs the checks (milestone 3)
+  api/               FastAPI service: targets, results, status; owns the database schema
+  checker/           Worker that checks every target on a schedule and stores the results
 k8s/                 Kubernetes manifests and Helm chart
 argocd/              ArgoCD application definitions
 monitoring/          Prometheus / Grafana / Alertmanager configuration
@@ -123,19 +123,23 @@ cp .env.example .env                 # then set your own password (letters and d
 docker compose up --build
 ```
 
-This starts two containers:
+This starts three containers:
 
 - `db`: PostgreSQL 18, with its data in the named volume `pgdata`, so it survives restarts
 - `api`: the API, built from `services/api/Dockerfile`; it starts once the database is healthy
-  and creates its table on startup
+  and creates the tables on startup
+- `checker`: built from `services/checker/Dockerfile`; every 30 seconds it requests each target
+  and stores the result (up or down, status code, response time) in the `check_results` table.
+  If the database or the tables are not there yet, it logs a warning and retries next round
 
-Targets are stored in PostgreSQL, so they survive restarts of both containers.
+Targets and results are stored in PostgreSQL, so they survive container restarts.
 
 Useful commands:
 
 ```bash
-docker compose ps                                       # status of both containers
+docker compose ps                                       # status of all containers
 docker compose logs -f api                              # follow the API logs
+docker compose logs -f checker                          # watch the checks as they run
 docker compose exec db psql -U uptime -d uptime         # open a SQL shell in the database
 docker compose down                                     # stop and remove the containers, keep the data
 docker compose down -v                                  # also delete the volume: all data is lost
@@ -172,10 +176,22 @@ curl http://localhost:8000/ready        # 200 when the database is reachable, 50
 
 ### Run the tests
 
-The tests need the database from Docker Compose and **empty the `targets` table**. From
+Each service has its own virtual environment and tests.
+
+**API:** the tests need the database from Docker Compose and **empty the tables**. From
 `services/api`, with the virtual environment active and `DATABASE_URL` set as above:
 
 ```bash
+python -m pytest -v
+```
+
+**Checker:** unit tests with a mocked HTTP client; no database or network needed.
+
+```bash
+cd services/checker
+py -3.14 -m venv .venv
+source .venv/Scripts/activate           # Linux/macOS: source .venv/bin/activate
+pip install -r requirements-dev.txt
 python -m pytest -v
 ```
 
